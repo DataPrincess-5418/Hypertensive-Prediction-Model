@@ -1,0 +1,446 @@
+---
+title: "Project 2"
+author: "Lily Li Bruce Shao"
+date: "2021/11/7"
+output: html_document
+---
+## Import the data
+```{r}
+framingham <- read.csv("~/Desktop/framingham.csv") 
+framingham <- na.omit(framingham)
+colnames(framingham)
+```
+# Data Cleaning
+### We have insufficient information about the education, so we delete the thrid column of data
+### The prevalent heart stroke category contains very imbalanced number of cases that we think it is not enough to represent the group (after omitting the incomplete information rows, only one patient once had prevalent stroke), so we delete the column 7.
+```{r}
+framingham = framingham[, -c(3), -c(7)]
+```
+
+# Exploratory Data Analysis
+### In this part, we will use mosaic plot, sid-byside box plots, and empirical logit plot to determine if there is a linear relationship exist between the response variable prevalentHyp and the predictor
+### Import the package "ggplot2"
+```{r}
+library(ggplot2)
+```
+
+
+## Emplogit function
+```{r}
+emplogit <- function(x, y, binsize = NULL, ci = FALSE, probit = FALSE,prob = FALSE, main = NULL, xlab = "", ylab = "", lowess.in = FALSE){
+  # x         vector with values of the independent variable
+  # y         vector of binary responses
+  # binsize   integer value specifying bin size (optional)
+  # ci        logical value indicating whether to plot approximate
+  #           confidence intervals (not supported as of 02/08/2015)
+  # probit    logical value indicating whether to plot probits instead
+  #           of logits
+  # prob      logical value indicating whether to plot probabilities
+  #           without transforming
+  #
+  # the rest are the familiar plotting options
+  
+  if (length(x) != length(y))
+    stop("x and y lengths differ")
+  if (any(y < 0 | y > 1))
+    stop("y not between 0 and 1")
+  if (length(x) < 100 & is.null(binsize))
+    stop("Less than 100 observations: specify binsize manually")
+  
+  if (is.null(binsize)) binsize = min(round(length(x)/10), 50)
+  
+  if (probit){
+    link = qnorm
+    if (is.null(main)) main = "Empirical probits"
+  } else {
+    link = function(x) log(x/(1-x))
+    if (is.null(main)) main = "Empirical logits"
+  }
+  
+  sort = order(x)
+  x = x[sort]
+  y = y[sort]
+  a = seq(1, length(x), by=binsize)
+  b = c(a[-1] - 1, length(x))
+  
+  prob = xmean = ns = rep(0, length(a)) # ns is for CIs
+  for (i in 1:length(a)){
+    range = (a[i]):(b[i])
+    prob[i] = mean(y[range])
+    xmean[i] = mean(x[range])
+    ns[i] = b[i] - a[i] + 1 # for CI 
+  }
+  
+  extreme = (prob == 1 | prob == 0)
+  prob[prob == 0] = min(prob[!extreme])
+  prob[prob == 1] = max(prob[!extreme])
+  
+  g = link(prob) # logits (or probits if probit == TRUE)
+  
+  linear.fit = lm(g[!extreme] ~ xmean[!extreme])
+  b0 = linear.fit$coef[1]
+  b1 = linear.fit$coef[2]
+  
+  loess.fit = loess(g[!extreme] ~ xmean[!extreme])
+  
+  plot(xmean, g, main=main, xlab=xlab, ylab=ylab)
+  abline(b0,b1)
+  if(lowess.in ==TRUE){
+  lines(loess.fit$x, loess.fit$fitted, lwd=2, lty=2)
+  }
+}
+```
+
+### Comparing the prevalentHyp and male using the mosaic plot
+```{r}
+table1<-table(framingham$prevalentHyp, framingham$male)
+mosaicplot(table1, xlab="male ", ylab=" prevalentHyp")
+```
+### Comment: the proportion of two categories are same, indicating that there is a no relation between the gender and the prevalentHyp. We should drop male as a predictor in the model.
+
+### prevalentHyp vs age
+```{r}
+ggplot(framingham, aes(x = age, y = as.factor(prevalentHyp)) )+ 
+  geom_boxplot() + 
+  labs(title = "prevalentHyp v.s. age", 
+       x = "age", y = "prevalentHyp") 
+```
+### Comment: the side-byside box plot shows that those who have hypertensive have evidently higher average age than those who is not, so there is a relatively strong relation between the prevalentHyp and age.
+
+### Logit plot
+```{r}
+emplogit(y = framingham$prevalentHyp, x = framingham$age, binsize = 100, 
+         xlab = "age", 
+         ylab = "Empirical logit")
+```
+### The logit plot shows that there is a linear relation between the age and TenYearCHD, so no transformation needed. Therefore, the variable age should be added in the model.
+
+
+### Compare currentSmoker and prevalentHyp
+```{r}
+table1<-table(framingham$prevalentHyp, framingham$currentSmoker)
+mosaicplot(table1, xlab= "currentSmoker", ylab= "prevalentHyp")
+```
+### Comment: the proportion of the hypertensive differs for smoker and nonsmokers, this means the currentSmoker has a relation with the prevalentHyp.
+
+### Compare cigsPerDay and prevalentHyp
+```{r}
+ggplot(framingham, aes(x = cigsPerDay, y = as.factor(prevalentHyp)) )+ 
+  geom_boxplot() + 
+  labs(title = "prevalentHyp v.s. cigsPerDay", 
+       x = "cigsPerDay", y = "prevalentHyp") 
+```
+### Comment: the side-byside box plot shows that there is slight difference in risk between those intake cigs or not, and there are many outliers existed in the boxplot, which could influence the accuracy of prediction, so we should not consider cigsPerDay as a valid predictor.
+
+### Logit plot
+```{r}
+emplogit(y = framingham$prevalentHyp, x = framingham$cigsPerDay, binsize = 100, 
+         xlab = "cigsPerDay", 
+         ylab = "Empirical logit")
+```
+### The logit plot shows that there is no linear relation between the cigsPerDay and TenYearCHD, according to the analysis with side by side box plot, this variable should be dropped from the model.
+
+### Compare the BPMeds and prevalentHyp
+```{r}
+table1<-table(framingham$prevalentHyp, framingham$BPMeds)
+mosaicplot(table1, xlab="BPMeds ", ylab="prevalentHyp")
+```
+### Comment: the mosaic plot shows that two proportions have relatively small difference, so BPMeds only have a very weak relation with TenYearCHD. For simplicity, we drop this variable.
+
+### Compare TenYearCHD and prevalentHyp
+```{r}
+table1<-table(framingham$prevalentHyp, framingham$TenYearCHD)
+mosaicplot(table1, xlab="TenYearCHD", ylab="prevalentHyp")
+```
+### The mosaic plot shows evident difference in proportion between two different outcomes of TenYearCHD, so we believe there is a relation between prevalentHyp and TenYearCHD. Therefore, we should add the TenYearCHD as a predictor in our model.
+
+### Compare diabetes and prevalentHyp
+```{r}
+table1<-table(framingham$prevalentHyp, framingham$diabetes)
+mosaicplot(table1, xlab="diabetes ", ylab=" prevalentHyp")
+```
+### Comment: the mosaic plot shows that there is a slight difference in proportion, indicating that there is a weak relation between diabetes and prevalentHyp. For simplicity consideration, we drop the variable
+
+```{r}
+ggplot(framingham, aes(x = totChol, y = as.factor(prevalentHyp)) )+ 
+  geom_boxplot() + 
+  labs(title = "prevalentHyp v.s. totChol", 
+       x = "totChol", y = "prevalentHyp") 
+```
+### Comment: the side-byside box plot shows that those who have CHD have slightly higher average total Cholestrol level than those who is not, so there is a relatively weak relation between the TenYearCHD and totChol. We should not conclude that totChol is a valid predictor.
+
+### Logit plot
+```{r}
+emplogit(y = framingham$prevalentHyp, x = framingham$totChol, binsize = 100, 
+         xlab = "totChol", 
+         ylab = "Empirical logit")
+```
+### The logit plot shows that there is a linear relation between the prevalentHyp and totChol. However, this linear relation is weak according to the side-by-side boxplot analysis above, we should not include totChol as one of our predictors.
+
+### Compare the sysBP and prevalentHyp
+```{r}
+ggplot(framingham, aes(x = sysBP, y = as.factor(TenYearCHD)) )+ 
+  geom_boxplot() + 
+  labs(title = "prevalentHyp v.s. sysBP", 
+       x = "sysBP", y = "prevalentHyp") 
+```
+### Comment: the side-byside box plot shows that the systolic blood pressure is evidently higher for those who has hupertensive than not, so there is a moderate relation between the sysBP and prevalentHyp.
+
+### Logit plot
+```{r}
+emplogit(y = framingham$prevalentHyp, x = framingham$sysBP, binsize = 100, 
+         xlab = "sysBP", 
+         ylab = "Empirical logit")
+```
+### The logit plot shows that there is a linear relation between the sysBP and TenYearCHD, so no transformation needed. Therefore, the variable age should be added in the model.Notifying that there is an outlier on the lower left of the empirical logit plot, but most of the data attach with the reference line, so we should believe that there is a linear relation between sysBP and empirical logit.
+
+### After transformation
+```{r}
+emplogit(y = framingham$prevalentHyp, x = log(framingham$sysBP), binsize = 100, 
+         xlab = "sysBP", 
+         ylab = "Empirical logit")
+```
+
+### Compare the diaBP and prevalentHyp
+```{r}
+ggplot(framingham, aes(x = diaBP, y = as.factor(prevalentHyp)) )+ 
+  geom_boxplot() + 
+  labs(title = "prevalentHyp v.s. diaBP", 
+       x = "diaBP", y = "prevalentHyp") 
+```
+### Comment: the side-byside box plot shows that the diastolic blood pressure is evidently higher for those who has hypertensive than those not, so there is a relatively strong relation between the diaBP and prevalentHyp.
+
+### Logit plot
+```{r}
+emplogit(y = framingham$prevalentHyp, x = framingham$diaBP, binsize = 100, 
+         xlab = "diaBP", 
+         ylab = "Empirical logit")
+```
+### The logit plot shows that there is a linear relation between the diaBP and prevalentHyp, so no transformation needed. Therefore, the variable age should be added in the model. There is no obvious outliers in the plot which could impact the slope significantly, so we should stick with our conclusion.
+
+### Compare BMI and prevalentHyp
+```{r}
+ggplot(framingham, aes(x = BMI, y = as.factor(prevalentHyp)) )+ 
+  geom_boxplot() + 
+  labs(title = "prevalentHyp v.s. BMI", 
+       x = "BMI", y = "prevalentHyp") 
+```
+### Comment: the side-byside box plot shows that the BMI is higher for those who has hypertensive than not, so there is a moderate relation between the BMI and prevalentHyp.
+
+### Logit plot
+```{r}
+emplogit(y = framingham$prevalentHyp, x = framingham$BMI, binsize = 100, 
+         xlab = "BMI", 
+         ylab = "Empirical logit")
+```
+### The logit plot shows that there is a moderate linear relation between the BMI and TenYearCHD, so no transformation needed. Therefore, the variable age should be added in the model. Notifying that there is an outlier on the upper right cornor of the logit plot, but it was close to the reference line, indicating that it has relatively small influence to the line. Therefore, we should be confident that there is a linear relation.
+
+### Compare heartRate and TenYearCHD
+```{r}
+ggplot(framingham, aes(x = heartRate, y = as.factor(prevalentHyp)) )+ 
+  geom_boxplot() + 
+  labs(title = "TenYearCHD v.s. heartRate", 
+       x = "heartRate", y = "TenYearCHD") 
+```
+### Comment: the side-byside box plot shows that the heart rate is roughly the same for those who has high risk of ten year risk of CHD and not, so there is no relation between the heart rate and TenYearCHD.
+
+### Logit plot
+```{r}
+emplogit(y = framingham$prevalentHyp, x = framingham$heartRate, binsize = 100, 
+         xlab = "heartRate", 
+         ylab = "Empirical logit")
+```
+### The logit plot shows that there is linear relation between the age and TenYearCHD, according to the analysis with side by side box plot, this variable should be keeped from the model. 
+
+### Compare glucose and TenYearCHD
+```{r}
+ggplot(framingham, aes(x = glucose, y = as.factor(prevalentHyp)) )+ 
+  geom_boxplot() + 
+  labs(title = "TenYearCHD v.s. glucose", 
+       x = "glucose", y = "TenYearCHD") 
+```
+### Comment: the side-byside box plot shows that the glucose level is slightly higher for those who has high risk of ten year risk of CHD than not, so there is a moderately weak relation between the glucose level and TenYearCHD. For simplicity consideration, we drop this variable.
+
+### Logit plot
+```{r}
+emplogit(y = framingham$prevalentHyp, x = framingham$glucose, binsize = 100, 
+         xlab = "glucose", 
+         ylab = "Empirical logit")
+```
+### The logit plot shows that there is very weak linear relation between the glucose and TenYearCHD once the outlier on the upper right cornor of the logit plot is dropped, according to the analysis with side by side box plot, this variable should be dropped from the model.
+
+
+# Multicollinearity
+### In the Part 1, we conduct EDA to check if the potential predictors have moderate/strong linear relationship with the response variable. We have found five predictors have strong/moderate linear relationship with the TenYearCHD. in this part, we will examine if there is multicollinearity between each predictors. We will use the correlation matrix for numerical-numerical variables, side-byside box plot & simple logistic models for categorical numerical variables, and mosaic plot for categorical-categorical variables.
+
+### Section 1: multicollinearity between numerical-numerical predictors
+### Correlation matrix
+```{r}
+cc <- cor(na.omit(framingham[, c("age", "diaBP", "BMI", "heartRate")]))
+cc
+```
+### From the correlation matrix, we see that there is no numerical variables which has correlation larger than 0.5 with other numerical variables, so there is no need to add any interation terms between numerical variables.
+
+### Section 2: multicollinearity between categorical-numerical predictors 
+### There are two categorical predictor: currentSmoker, TenYearCHD
+
+### CurrentSmoker
+### Compare currentSmoker and age
+```{r}
+ggplot(framingham, aes(x = age, y = as.factor(currentSmoker)) )+ 
+  geom_boxplot() + 
+  labs(title = "age v.s. currentSmoker", 
+       x = "age", y = "currentSmoker") 
+```
+### The side-by-side boxplot shows that the average age of patient who is currently a smoker are evidently larger than the average age of patient who is not a smoker. Therefore, there is a relation between the age and currentSmoker, and we should add an interaction term for this. 
+
+### simple logistic model for further analysis
+```{r}
+ca <- glm(currentSmoker ~ age, data = framingham, family = "binomial")
+summary(ca)
+```
+### The P-value of the age is less than 2e-16, indicating that there is a linear relationship between the age and currentSmoker, so we should add an interaction term between these two variables.
+
+### Compare currentSmoker and diaBP
+```{r}
+ggplot(framingham, aes(x = diaBP, y = as.factor(currentSmoker)) )+ 
+  geom_boxplot() + 
+  labs(title = "diaBP v.s. currentSmoker", 
+       x = "diaBP", y = "currentSmoker") 
+```
+
+```{r}
+ct <- glm(currentSmoker ~ diaBP, data = framingham, family = "binomial")
+summary(ct)
+```
+
+### The P-value of the age is less than 2e-16, indicating that the slope of age is significant under null hypothesis. Therefore, there is a linear relationship between the age and currentSmoker, so we should add an interaction term between these two variables.
+
+### Compare currentSmoker and BMI
+```{r}
+ggplot(framingham, aes(x = BMI, y = as.factor(currentSmoker)) )+ 
+  geom_boxplot() + 
+  labs(title = "BMI v.s. currentSmoker", 
+       x = "BMI", y = "currentSmoker") 
+```
+### The side-by-side boxplot shows that the average BMI of smokers are evidently smaller than the average age of patient without hypertensive. Therefore, there is a relation between the age and prevalentHype, and we should add an interaction term for this. 
+
+### Simple Logistic Regression Model
+```{r}
+cb <- glm(currentSmoker ~ BMI, data = framingham, family = "binomial")
+summary(cb)
+```
+### The P-value of the BMI is less than 2e-16, indicating that the slope of diaNP is significant under null hypothesis. Therefore, there is a linear relationship between the BMI and currentSmoker, so we should add an interaction term between these two variables.
+
+### TenYearCHD
+### Compare TenYearCHD and age
+```{r}
+ggplot(framingham, aes(x = age, y = as.factor(TenYearCHD)) )+ 
+  geom_boxplot() + 
+  labs(title = "age v.s. TenYearCHD", 
+       x = "age", y = "TenYearCHD") 
+```
+### The side-by-side boxplot shows that the average age of with those have high risk of CHD are evidently larger than the average age of patient without high risk of CHD. Therefore, there is a relation between the age and TenYearCHD, and we should add an interaction term for this. 
+
+### Simple Logistic Regression Model
+```{r}
+ta <- glm(TenYearCHD ~ age, data = framingham, family = "binomial")
+summary(ta)
+```
+### The P-value of the age is less than 2e-16, indicating that the slope of age is significant under null hypothesis. Therefore, there is a linear relationship between the age and TenYearCHD, so we should add an interaction term between these two variables.
+
+### Compare TenYearCHD and diaBP
+```{r}
+ggplot(framingham, aes(x = diaBP, y = as.factor(TenYearCHD)) )+ 
+  geom_boxplot() + 
+  labs(title = "diaBP v.s. TenYearCHD", 
+       x = "diaBP", y = "TenYearCHD") 
+```
+### The side-by-side boxplot shows that the average diaBP of patient with high risk of CHD are evidently larger than the average diaBP of patient without high risk of CHD. Therefore, there is a relation between the diaBP and TenYearCHD, and we should add an interaction term for this. 
+
+### Simple Logistic Regression Model
+```{r}
+td <- glm(TenYearCHD ~ diaBP, data = framingham, family = "binomial")
+summary(td)
+```
+### The P-value of the diaBP is less than 2e-16, indicating that the slope of diaBP is significant under null hypothesis. Therefore, there is a linear relationship between the diaBP and TenYearCHD, so we should add an interaction term between these two variables.
+
+### Compare TenYearCHD and BMI
+```{r}
+ggplot(framingham, aes(x = BMI, y = as.factor(TenYearCHD)) )+ 
+  geom_boxplot() + 
+  labs(title = "BMI v.s. TenYearCHD", 
+       x = "BMI", y = "TenYearCHD") 
+```
+### The side-by-side boxplot shows that the average BMI of patient with high risk of CHD are evidently larger than the average BMI of patient without high risk of CHD. Therefore, there is a relation between the BMI and TenYearCHD, and we should add an interaction term for this. 
+
+### Simple Logistic Regression Model
+```{r}
+td <- glm(TenYearCHD ~ BMI, data = framingham, family = "binomial")
+summary(td)
+```
+### The P-value of the BMI is less than 2e-16, indicating that the slope of BMI is significant under null hypothesis. Therefore, there is a linear relationship between the BMI and TenYearCHD, so we should add an interaction term between these two variables.
+
+
+### Section 3: multicollinearity between categorical-categorical predictors
+### we use mosaic plot to compare the TenYearCHD and the currentSmoker
+```{r}
+table1<-table(framingham$TenYearCHD, framingham$currentSmoker)
+mosaicplot(table1, xlab= "currentSmoker", ylab= "TenYearCHD")
+```
+### The mosaic plot shows evident difference in proportion between two different outcomes of currentSmoker, so we believe there is a relation between currentSmoker and TenYearCHD. Therefore, we should add an interaction term between them as a predictor in our model.
+
+
+# Model Creation
+### In this part, we will create models and compare them to find the best logistic model to predict the CHD risk
+### From the multicollinearity checking part, we know that there are some interaction exist between variables. However, we are wary how much would. Therefore, we will create models without interaction, with some interaction. Meanwhile, in this part, we will create models with sysBP and without sysBP to see if sysBP is a significant predictor.
+
+
+### Model 1: with some of the interaction (those with pronounced impact) 
+### We use the Best Subsset Selection (BSS) method to find the best collection of variables including the interaction term that explains largest portion of variability with least number of predictors.
+```{r}
+library(bestglm)  # on doc: https://docs.google.com/document/d/1olhlLeU4fcwr87eSLtGmVexiZYM0-XHQi0jhH-t8ADA/edit#
+BestModel<-model.matrix(glm(prevalentHyp ~ age + TenYearCHD  + heartRate + 
+                              diaBP + BMI + currentSmoker +
+                              age:TenYearCHD + currentSmoker:TenYearCHD ,data=framingham, 
+                            family="binomial"))
+BestModelFind<-cbind(as.data.frame(BestModel[,-1]),response=framingham$prevalentHyp)
+BSS<-bestglm(BestModelFind, IC = "AIC", family = binomial)
+Model2 <- BSS$BestModel
+summary(Model2) 
+```  
+
+```{r}
+Model1<-glm(prevalentHyp ~ age + heartRate + diaBP + BMI + age:TenYearCHD + 
+                           TenYearCHD:currentSmoker,data=framingham, family = "binomial")
+summary(Model1)
+```
+###Model2 
+```{r}
+Model2<-glm(prevalentHyp ~ age + heartRate + diaBP + BMI + age:TenYearCHD
+                              ,data=framingham, family = "binomial")
+summary(Model2)
+```
+### Model 3
+```{r}
+Model3<-glm(prevalentHyp ~ age + diaBP + BMI + age:TenYearCHD
+                              ,data=framingham, family = "binomial")
+summary(Model3)
+```
+```{r}
+anova(Model3, Model2, Model1, test = "LR")
+```
+
+
+### From the likelihood ratio test, we could see that, while Model1 perform similar as Model2, Model3 has P-value of 0.0004984, indicating that Model3 explains statistically significantly more variance than the Model1 and Model2. However, considering the number of newly added predictors, our final model should be determined based on the situation. If we want a more precise one, we should use Model3, If we want to find the probability relatively quick, we should use the Model1 
+
+### In this case, we choose Model 1 as this is the easiest model that patient, regardless of their education level, could understand easily. 
+### Construct the confidence intervals for the slopes of variables in Model 1
+```{r}
+confint(Model1, level = 0.9)
+```
+
+
+
+
+
